@@ -1,30 +1,91 @@
 local Players = game:GetService("Players")
 
 local player = Players.LocalPlayer
-local rigs = workspace:WaitForChild("Rigs")
 
 local function GetCharacter()
-	local rig = rigs:FindFirstChild(player.Name)
 
-	while not rig do
-		rigs.ChildAdded:Wait()
-		rig = rigs:FindFirstChild(player.Name)
+	local rigs = workspace:FindFirstChild("Rigs")
+
+	if rigs then
+		local rig = rigs:FindFirstChild(player.Name)
+
+		if rig then
+			local humanoid = rig:FindFirstChildOfClass("Humanoid")
+
+			if humanoid then
+				print(
+					"[Accessory Loader] Using Workspace.Rigs:",
+					rig:GetFullName()
+				)
+
+				return rig, humanoid
+			end
+		end
 	end
 
-	return rig
+	local character = player.Character
+
+	if not character then
+		character = player.CharacterAdded:Wait()
+	end
+
+	if character then
+		local humanoid =
+			character:FindFirstChildOfClass("Humanoid")
+			or character:WaitForChild("Humanoid", 5)
+
+		if humanoid then
+			print(
+				"[Accessory Loader] Using default character:",
+				character:GetFullName()
+			)
+
+			return character, humanoid
+		end
+	end
+
+	warn("[Accessory Loader] Character tidak ditemukan")
+
+	return nil, nil
 end
 
-local character = GetCharacter()
-local humanoid = character:WaitForChild("Humanoid")
+local function FindBodyAttachment(character, attachmentName)
+	for _, object in ipairs(character:GetDescendants()) do
+		if object:IsA("Attachment")
+			and object.Name == attachmentName
+			and object.Parent:IsA("BasePart") then
 
-local function LoadAccessory(assetId)
+			return object
+		end
+	end
+
+	return nil
+end
+
+local function LoadAccessory(assetId, offset)
+	local character, humanoid = GetCharacter()
+
+	if not character or not humanoid then
+		warn("[Accessory Loader] Tidak ada character/humanoid")
+		return nil
+	end
+
 	local success, objects = pcall(function()
-		return game:GetObjects("rbxassetid://" .. tostring(assetId))
+		return game:GetObjects(
+			"rbxassetid://" .. tostring(assetId)
+		)
 	end)
 
-	if not success or not objects or not objects[1] then
-		warn("Gagal load asset:", assetId)
-		return
+	if not success
+		or not objects
+		or not objects[1] then
+
+		warn(
+			"[Accessory Loader] Gagal load asset:",
+			assetId
+		)
+
+		return nil
 	end
 
 	local loaded = objects[1]
@@ -33,14 +94,24 @@ local function LoadAccessory(assetId)
 
 	if loaded:IsA("Accessory") then
 		accessory = loaded
+
 	else
-		accessory = loaded:FindFirstChildWhichIsA("Accessory", true)
+		accessory =
+			loaded:FindFirstChildWhichIsA(
+				"Accessory",
+				true
+			)
 	end
 
 	if not accessory then
-		warn("Asset ini bukan Accessory:", assetId)
+		warn(
+			"[Accessory Loader] Asset bukan Accessory:",
+			assetId
+		)
+
 		loaded:Destroy()
-		return
+
+		return nil
 	end
 
 	accessory.Parent = nil
@@ -49,50 +120,92 @@ local function LoadAccessory(assetId)
 		loaded:Destroy()
 	end
 
-	local handle = accessory:FindFirstChild("Handle")
+	local handle =
+		accessory:FindFirstChild("Handle")
 
-	if not handle then
-		warn("Accessory tidak punya Handle")
+	if not handle
+		or not handle:IsA("BasePart") then
+
+		warn(
+			"[Accessory Loader] Accessory tidak punya Handle:",
+			accessory.Name
+		)
+
 		accessory:Destroy()
-		return
+
+		return nil
 	end
 
-	local itemAttachment = handle:FindFirstChildWhichIsA("Attachment")
+	handle.CanCollide = false
+	handle.CanTouch = false
+	handle.CanQuery = false
+	handle.Massless = true
+
+	local itemAttachment =
+		handle:FindFirstChildWhichIsA(
+			"Attachment"
+		)
 
 	if itemAttachment then
-		print("Accessory:", accessory.Name)
-		print("Attachment type:", itemAttachment.Name)
-		print("Item attachment position:", itemAttachment.Position)
-		print("Item attachment rotation:", itemAttachment.Orientation)
+		print(
+			"[Accessory Loader] Accessory:",
+			accessory.Name
+		)
+
+		print(
+			"[Accessory Loader] Attachment:",
+			itemAttachment.Name
+		)
 
 		local bodyAttachment =
-			character:FindFirstChild(itemAttachment.Name, true)
+			FindBodyAttachment(
+				character,
+				itemAttachment.Name
+			)
 
-		if bodyAttachment
-			and bodyAttachment:IsA("Attachment")
-			and bodyAttachment.Parent:IsA("BasePart") then
+		if bodyAttachment then
+
+			local bodyPart =
+				bodyAttachment.Parent
 
 			accessory.Parent = character
 
-			local weld = Instance.new("Weld")
+			local oldWeld =
+				handle:FindFirstChild(
+					"AccessoryWeld"
+				)
+
+			if oldWeld then
+				oldWeld:Destroy()
+			end
+
+			local weld =
+				Instance.new("Weld")
+
 			weld.Name = "AccessoryWeld"
 
-			weld.Part0 = bodyAttachment.Parent
+			weld.Part0 = bodyPart
 			weld.Part1 = handle
 
-			weld.C0 = bodyAttachment.CFrame
-			weld.C1 = itemAttachment.CFrame
+			weld.C0 =
+				bodyAttachment.CFrame
+
+			if offset then
+				weld.C1 =
+					itemAttachment.CFrame
+					* offset
+			else
+				weld.C1 =
+					itemAttachment.CFrame
+			end
 
 			weld.Parent = handle
 
-			handle.CanCollide = false
-			handle.Massless = true
-
 			print(
-				"Attached:",
+				"[Accessory Loader] Attached:",
 				accessory.Name,
 				"->",
-				bodyAttachment.Parent.Name,
+				bodyPart.Name,
 				"using",
 				itemAttachment.Name
 			)
@@ -101,7 +214,29 @@ local function LoadAccessory(assetId)
 		end
 	end
 
-	humanoid:AddAccessory(accessory)
+	print(
+		"[Accessory Loader] Attachment pair tidak ditemukan, menggunakan Humanoid:AddAccessory()"
+	)
+
+	local addSuccess, addError =
+		pcall(function()
+
+			humanoid:AddAccessory(
+				accessory
+			)
+
+		end)
+
+	if not addSuccess then
+		warn(
+			"[Accessory Loader] AddAccessory gagal:",
+			addError
+		)
+
+		accessory:Destroy()
+
+		return nil
+	end
 
 	pcall(function()
 		humanoid:BuildRigFromAttachments()
@@ -110,4 +245,6 @@ local function LoadAccessory(assetId)
 	return accessory
 end
 
-LoadAccessory(10159600649)
+local ITEM_ID = 10159600649
+
+LoadAccessory(ITEM_ID)
